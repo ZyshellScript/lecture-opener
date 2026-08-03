@@ -12,6 +12,10 @@ No Python, no Node, no dependencies — just PowerShell and Chrome.
 4. It keeps clicking until the Join button disappears from the screen (meaning you're in the meeting).
 5. Everything is logged to `log.txt`.
 
+For lectures whose links change every session, use **Classroom mode**: the script opens
+Google Classroom, finds the class by name, reads the class stream, and picks up the meeting
+link **posted today** (it never opens a link from an old post).
+
 ## Setup
 
 ### 1. Put your schedule in the script
@@ -20,17 +24,19 @@ Edit the `$schedule` list at the top of `lecture-opener.ps1`:
 
 ```powershell
 $schedule = @(
-    @{ name = "Math";    link = "https://meet.google.com/xxx-xxxx-xxx"; day = "Monday";    time = "10:00"; advance = 0; delay = 0 }
-    @{ name = "Physics"; link = "https://zoom.us/j/1234567890";         day = "Wednesday"; time = "13:30"; advance = 0; delay = 0 }
+    @{ name = "Math";    link = "https://meet.google.com/xxx-xxxx-xxx"; day = "Monday";    time = "10:00"; advance = 0; delay = 0; mode = "link";      classroom = "" }
+    @{ name = "Physics"; link = "";                                    day = "Wednesday"; time = "13:30"; advance = 0; delay = 0; mode = "classroom"; classroom = "Physics" }
 )
 ```
 
 - `name` — subject name (just for the log)
-- `link` — the meeting link
+- `link` — the meeting link (leave empty when `mode = "classroom"`)
 - `day` — `Sunday` ... `Saturday` (abbreviations like `Mon` also work)
 - `time` — 24-hour format (`08:00` = 8 AM, `21:00` = 9 PM)
 - `advance` — open this many minutes **before** the time (`0` = exactly on time)
 - `delay` — open this many minutes **after** the time
+- `mode` — `"link"` opens the saved link directly; `"classroom"` looks the link up in Google Classroom
+- `classroom` — the exact class name as shown in Google Classroom (only used in `"classroom"` mode)
 
 ### 2. Sign in to your Google account once
 
