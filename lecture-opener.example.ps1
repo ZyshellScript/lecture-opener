@@ -7,13 +7,22 @@
 #
 #  THIS IS A TEMPLATE. Copy it to lecture-opener.ps1 and
 #  put your real meeting links in the schedule below.
+#
+#  TWO MODES:
+#   - mode = "link": opens the saved link directly.
+#   - mode = "classroom": opens Google Classroom, finds
+#     the class whose name matches 'classroom', looks for
+#     a meeting link posted TODAY on the stream, and only
+#     opens that (never an old post's link).
 # =====================================================
 
 # advance = open this many minutes BEFORE the time | delay = open this many minutes AFTER the time
+# mode = "link" (use the saved link) OR "classroom" (find the link in Google Classroom, class name in 'classroom')
 $schedule = @(
-    @{ name = "Math";    link = "PASTE_MEETING_LINK_HERE"; day = "Monday";    time = "10:00"; advance = 0; delay = 0 }
-    @{ name = "Physics"; link = "PASTE_MEETING_LINK_HERE"; day = "Wednesday"; time = "13:30"; advance = 0; delay = 0 }
+    @{ name = "Math";    link = "PASTE_MEETING_LINK_HERE"; day = "Monday";    time = "10:00"; advance = 0; delay = 0; mode = "link";      classroom = "" }
+    @{ name = "Physics"; link = "";                        day = "Wednesday"; time = "13:30"; advance = 0; delay = 0; mode = "classroom"; classroom = "Physics" }
 )
+
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
@@ -121,13 +130,17 @@ function Open-MeetingTab($link) {
     }
 }
 
-function Join-Meeting($name, $link) {
-    Write-Log "Auto-joining: $name"
-    if (-not (Open-MeetingTab $link)) {
-        Write-Log "FAILED to open Chrome tab for $name"
-        return
-    }
+function Send-CdpFireAndForget($ws, $method, $params) {
+    $script:cdpId++
+    $payload = @{ id = $script:cdpId; method = $method; params = $params } | ConvertTo-Json -Compress -Depth 8
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($payload)
+    $seg = [ArraySegment[byte]]::new($bytes)
+    $ct = [System.Threading.CancellationToken]::None
+    $ws.SendAsync($seg, [System.Net.WebSockets.WebSocketMessageType]::Text, $true, $ct).Wait()
+}
 
+function Connect-ToPage($link) {
+    if (-not (Open-MeetingTab $link)) { return $null }
     $base = "http://127.0.0.1:$script:debugPort"
     $wsUrl = $null
     $deadline = (Get-Date).AddSeconds(40)
@@ -136,20 +149,28 @@ function Join-Meeting($name, $link) {
             $targets = Invoke-RestMethod -Uri "$base/json/list" -TimeoutSec 3
             $t = $targets | Where-Object { $_.type -eq "page" -and $_.url -like "$link*" } | Select-Object -First 1
             if (-not $t) {
-                $t = $targets | Where-Object { $_.type -eq "page" -and ($_.url -like "*meet.google.com*" -or $_.url -like "*zoom.us*") -and $_.url -notlike "chrome://*" } | Select-Object -First 1
+                $t = $targets | Where-Object { $_.type -eq "page" -and ($_.url -like "*meet.google.com*" -or $_.url -like "*zoom.us*" -or $_.url -like "*classroom.google.com*") -and $_.url -notlike "chrome://*" } | Select-Object -First 1
             }
             if ($t -and $t.webSocketDebuggerUrl) { $wsUrl = $t.webSocketDebuggerUrl; break }
         } catch {}
         Start-Sleep -Milliseconds 800
     }
-    if (-not $wsUrl) {
-        Write-Log "Could not connect to the meeting page for $name"
-        return
-    }
-
+    if (-not $wsUrl) { return $null }
     $ws = New-Object System.Net.WebSockets.ClientWebSocket
     try {
         $ws.ConnectAsync([uri]$wsUrl, [System.Threading.CancellationToken]::None).Wait()
+        return $ws
+    } catch { return $null }
+}
+
+function Join-Meeting($name, $link) {
+    Write-Log "Auto-joining: $name"
+    $ws = Connect-ToPage $link
+    if (-not $ws) {
+        Write-Log "Could not connect to the meeting page for $name"
+        return
+    }
+    try {
 
         $js = @'
 (() => {
@@ -201,9 +222,95 @@ function Join-Meeting($name, $link) {
     }
 }
 
+function Join-FromClassroom($name, $subject) {
+    Write-Log "Looking for '$subject' meeting in Google Classroom"
+    $ws = Connect-ToPage "https://classroom.google.com"
+    if (-not $ws) {
+        Write-Log "Could not open Google Classroom for $subject"
+        return $false
+    }
+    try {
+        $subjectEsc = $subject.Replace("'", "")
+        $findClass = @"
+(() => {
+  const q = '$subjectEsc'.toLowerCase();
+  const links = Array.from(document.querySelectorAll('a[href*="/c/"]'));
+  for (const a of links) {
+    const t = (a.innerText || '').trim().toLowerCase();
+    if (t.includes(q)) return { found: true, url: a.href };
+  }
+  return { found: false };
+})()
+"@
+
+        $courseUrl = $null
+        $deadline = (Get-Date).AddSeconds(30)
+        while ((Get-Date) -lt $deadline -and -not $courseUrl) {
+            $resp = Invoke-CdpEvaluate $ws $findClass
+            if ($resp -and $resp.result -and $resp.result.result -and $resp.result.result.value -and $resp.result.result.value.found) {
+                $courseUrl = $resp.result.result.value.url
+                Write-Log "Found class '$subject' in Classroom"
+            } else {
+                Start-Sleep -Seconds 3
+            }
+        }
+        if (-not $courseUrl) {
+            Write-Log "Class '$subject' not found in Classroom"
+            return $false
+        }
+
+        Send-CdpFireAndForget $ws "Page.navigate" @{ url = $courseUrl }
+        Start-Sleep -Seconds 8
+
+        $extractMeet = @'
+(() => {
+  const anchors = Array.from(document.querySelectorAll('a[href*="meet.google.com"]'));
+  for (const a of anchors) {
+    let el = a.parentElement;
+    let section = null;
+    while (el && el !== document.body) {
+      if (el.tagName === 'SECTION') { section = el; break; }
+      el = el.parentElement;
+    }
+    if (!section) continue;
+    const m = (section.textContent || '').match(/Created\s+(\d{1,2}:\d{2}\s*[APap][Mm])/);
+    if (m) return { found: true, link: a.href };
+  }
+  return { found: false };
+})()
+'@
+
+        $searchDeadline = (Get-Date).AddMinutes(25)
+        $meetLink = $null
+        while ((Get-Date) -lt $searchDeadline -and -not $meetLink) {
+            $resp = Invoke-CdpEvaluate $ws $extractMeet
+            if ($resp -and $resp.result -and $resp.result.result -and $resp.result.result.value -and $resp.result.result.value.found) {
+                $meetLink = $resp.result.result.value.link
+                Write-Log "Found meeting link for '$subject': $meetLink"
+            } else {
+                Send-CdpFireAndForget $ws "Page.reload" @{}
+                Write-Log "No meeting link yet for '$subject' - refreshing..."
+                Start-Sleep -Seconds 8
+            }
+        }
+        if (-not $meetLink) {
+            Write-Log "No meeting link appeared for '$subject' after waiting"
+            return $false
+        }
+        Join-Meeting $name $meetLink
+        return $true
+    } catch {
+        Write-Log "Classroom automation error for ${subject}: $_"
+        return $false
+    } finally {
+        try { $ws.Dispose() } catch {}
+    }
+}
+
 $now = [System.TimeZoneInfo]::ConvertTime([DateTime]::UtcNow, $egyptTZ)
 Write-Log "Schedule is running - lectures in schedule: $($schedule.Count) - Egypt time: $($now.ToString('yyyy-MM-dd HH:mm'))"
 Write-Log "Leave it running, it will open the links by itself."
+Write-Log "Account: PASTE_YOUR_ACCOUNT_EMAIL (already logged in if you used login-profile.bat)"
 
 $openedToday = @{}
 $lastDay = ""
@@ -226,12 +333,20 @@ while ($true) {
         $openTime = ([DateTime]::Parse($lec.time)).AddMinutes([int]$lec.delay - [int]$lec.advance).ToString("HH:mm")
         if ($timeStr -ne $openTime) { continue }
 
-        $key = "$dayKey|$($lec.link)"
+        $key = "$dayKey|$($lec.mode)|$($lec.name)|$timeStr"
         if ($openedToday.ContainsKey($key)) { continue }
 
         $openedToday[$key] = $true
-        Write-Log "Opening lecture: $($lec.name) -> $($lec.link)"
-        Join-Meeting $lec.name $lec.link
+        if ($lec.mode -eq "classroom") {
+            $ok = Join-FromClassroom $lec.name $lec.classroom
+            if (-not $ok -and $lec.link) {
+                Write-Log "Classroom lookup failed for $($lec.name) - falling back to saved link"
+                Join-Meeting $lec.name $lec.link
+            }
+        } else {
+            Write-Log "Opening lecture: $($lec.name) -> $($lec.link)"
+            Join-Meeting $lec.name $lec.link
+        }
     }
 
     Start-Sleep -Seconds 15
