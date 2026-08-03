@@ -1,6 +1,6 @@
-# =====================================================
+﻿# =====================================================
 #  Lecture Opener - opens your lecture links in Google
-#  Chrome automatically at the right time (Egypt TZ).
+#  Chrome automatically at the right time.
 #  Keep your laptop and this script running, and it will
 #  open the link by itself at the exact time, then click
 #  the Join button using a real mouse click.
@@ -18,17 +18,41 @@
 
 # advance = open this many minutes BEFORE the time | delay = open this many minutes AFTER the time
 # mode = "link" (use the saved link) OR "classroom" (find the link in Google Classroom, class name in 'classroom')
-$schedule = @(
-    @{ name = "Math";    link = "PASTE_MEETING_LINK_HERE"; day = "Monday";    time = "10:00"; advance = 0; delay = 0; mode = "link";      classroom = "" }
-    @{ name = "Physics"; link = "";                        day = "Wednesday"; time = "13:30"; advance = 0; delay = 0; mode = "classroom"; classroom = "Physics" }
+#
+# ============ PROFILES ============
+# One profile per university / Google account. Each profile has its own
+# schedule, its own Chrome login folder (chromeProfile) and its own account.
+# - If you have ONE profile, the script uses it silently (no question asked).
+# - Add a SECOND profile to enable the "which profile?" prompt at startup.
+# - chromeProfile = folder (under this script) holding that account's Chrome login.
+#   Log each account in separately with login-profile.bat (it lists all profiles).
+$profiles = @(
+    @{
+        name          = "PASTE_PROFILE_NAME"
+        account       = "PASTE_ACCOUNT_EMAIL"
+        chromeProfile = "chrome-profile"
+        schedule      = @(
+            @{ name = "Math";    link = "PASTE_MEETING_LINK_HERE"; day = "Monday";    time = "10:00"; advance = 0; delay = 0; mode = "link";      classroom = "" }
+            @{ name = "Physics"; link = "";                        day = "Wednesday"; time = "13:30"; advance = 0; delay = 0; mode = "classroom"; classroom = "Physics" }
+        )
+    }
+    # Example of a second profile (uncomment to enable the profile question):
+    # @{
+    #     name          = "PASTE_SECOND_UNIVERSITY"
+    #     account       = "PASTE_SECOND_ACCOUNT_EMAIL"
+    #     chromeProfile = "chrome-profile2"
+    #     schedule      = @(
+    #         @{ name = "Chemistry"; link = "PASTE_MEETING_LINK_HERE"; day = "Tuesday";   time = "11:00"; advance = 0; delay = 0; mode = "link";      classroom = "" }
+    #     )
+    # }
 )
 
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
 
-$egyptTZ = [System.TimeZoneInfo]::FindSystemTimeZoneById("Egypt Standard Time")
 $logFile = Join-Path $PSScriptRoot "log.txt"
+$script:configPath = Join-Path $PSScriptRoot "config.json"
 
 function Get-ChromePath {
     $paths = @(
@@ -41,7 +65,9 @@ function Get-ChromePath {
 }
 
 function Write-Log($msg) {
-    $line = "[{0}] {1}" -f ([System.TimeZoneInfo]::ConvertTime([DateTime]::UtcNow, $egyptTZ).ToString("yyyy-MM-dd HH:mm:ss"), $msg)
+    $tz = $script:tz
+    if (-not $tz) { $tz = [System.TimeZoneInfo]::Local }
+    $line = "[{0}] {1}" -f ([System.TimeZoneInfo]::ConvertTime([DateTime]::UtcNow, $tz).ToString("yyyy-MM-dd HH:mm:ss"), $msg)
     Write-Host $line
     Add-Content -LiteralPath $logFile -Value $line -Encoding UTF8
 }
@@ -49,6 +75,137 @@ function Write-Log($msg) {
 function Test-DayMatches($scheduleDay, $todayEnglish) {
     return ($scheduleDay.Trim() -eq $todayEnglish -or $scheduleDay.Trim() -eq $todayEnglish.Substring(0,3))
 }
+
+function Read-Trim($prompt) {
+    $v = Read-Host $prompt
+    if ($null -eq $v) { return "" }
+    return $v.Trim()
+}
+
+function Save-Config($props) {
+    $cfg = @{}
+    if (Test-Path -LiteralPath $script:configPath) {
+        try {
+            $existing = Get-Content -LiteralPath $script:configPath -Raw | ConvertFrom-Json
+            foreach ($p in $existing.PSObject.Properties) { $cfg[$p.Name] = $p.Value }
+        } catch {}
+    }
+    foreach ($k in $props.Keys) { $cfg[$k] = $props[$k] }
+    $cfg | ConvertTo-Json | Set-Content -LiteralPath $script:configPath -Encoding UTF8
+}
+
+function Select-Profile {
+    $active = @($profiles | Where-Object { $_.schedule -and @($_.schedule).Count -gt 0 })
+    if ($active.Count -eq 0) {
+        Write-Log "ERROR: No profiles with a schedule were found. Add one at the top of the script."
+        Read-Host "Press Enter to close"
+        exit 1
+    }
+    if ($active.Count -eq 1) {
+        Write-Log "Using profile: $($active[0].name) ($($active[0].account))"
+        Save-Config @{ lastProfile = $active[0].name }
+        return $active[0]
+    }
+    $savedName = $null
+    if (Test-Path -LiteralPath $script:configPath) {
+        try { $savedName = (Get-Content -LiteralPath $script:configPath -Raw | ConvertFrom-Json).lastProfile } catch {}
+    }
+    if ($savedName) {
+        $saved = $active | Where-Object { $_.name -eq $savedName } | Select-Object -First 1
+        if ($saved) {
+            $ans = Read-Trim "Use last profile '$($saved.name)'? (Enter=yes, or type anything to change)"
+            if ([string]::IsNullOrWhiteSpace($ans)) {
+                Write-Log "Using profile: $($saved.name) ($($saved.account))"
+                Save-Config @{ lastProfile = $saved.name }
+                return $saved
+            }
+        }
+    }
+    Write-Host ""
+    Write-Host "Multiple profiles found. Select one:"
+    for ($i = 0; $i -lt $active.Count; $i++) {
+        Write-Host ("  {0}) {1}  ({2})" -f ($i + 1), $active[$i].name, $active[$i].account)
+    }
+    while ($true) {
+        $n = 0
+        $choice = Read-Trim "Pick a number"
+        if ([int]::TryParse($choice, [ref]$n) -and $n -ge 1 -and $n -le $active.Count) {
+            $sel = $active[$n - 1]
+            Write-Log "Using profile: $($sel.name) ($($sel.account))"
+            Save-Config @{ lastProfile = $sel.name }
+            return $sel
+        }
+        Write-Host "Invalid choice."
+    }
+}
+
+function Stop-AutomationChrome {
+    Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" -ErrorAction SilentlyContinue | Where-Object {
+        $_.CommandLine -and $_.CommandLine -like "*--user-data-dir=*$PSScriptRoot*"
+    } | ForEach-Object {
+        Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Select-Timezone {
+    $timezones = [System.TimeZoneInfo]::GetSystemTimeZones()
+    $saved = $null
+    if (Test-Path -LiteralPath $script:configPath) {
+        try {
+            $cfg = Get-Content -LiteralPath $script:configPath -Raw | ConvertFrom-Json
+            if ($cfg.timezoneId) { $saved = [System.TimeZoneInfo]::FindSystemTimeZoneById($cfg.timezoneId) }
+        } catch {}
+    }
+    if ($saved) {
+        Write-Host ""
+        Write-Host "Saved timezone: $($saved.Id) ($($saved.DisplayName))"
+        $ans = Read-Trim "Press Enter to keep it, or type a country/timezone name to change"
+        if ([string]::IsNullOrWhiteSpace($ans)) { return $saved }
+    } else {
+        Write-Host ""
+        Write-Host "Select your timezone (any country works)."
+        $ans = $null
+    }
+    while ($true) {
+        if ([string]::IsNullOrWhiteSpace($ans)) {
+            $ans = Read-Trim "Country/timezone (example: Egypt, India, UK, California, Eastern) or Enter for your PC timezone"
+        }
+        if ([string]::IsNullOrWhiteSpace($ans)) {
+            $local = [System.TimeZoneInfo]::Local
+            Write-Host "Using your computer's timezone: $($local.Id)"
+            Save-Config @{ timezoneId = $local.Id }
+            return $local
+        }
+        $matches = @($timezones | Where-Object {
+            $_.Id -like "*$ans*" -or $_.DisplayName -like "*$ans*" -or $_.StandardName -like "*$ans*" -or $_.DaylightName -like "*$ans*"
+        })
+        if ($matches.Count -eq 0) {
+            Write-Host "No timezone matched '$ans'."
+            $ans = $null
+            continue
+        }
+        if ($matches.Count -eq 1) {
+            Write-Host "Matched: $($matches[0].Id) ($($matches[0].DisplayName))"
+            Save-Config @{ timezoneId = $matches[0].Id }
+            return $matches[0]
+        }
+        Write-Host "Multiple matches:"
+        for ($i = 0; $i -lt $matches.Count; $i++) {
+            Write-Host ("  {0}) {1}  ({2})" -f ($i + 1), $matches[$i].Id, $matches[$i].DisplayName)
+        }
+        $n = 0
+        $choice = Read-Trim "Pick a number"
+        if ([int]::TryParse($choice, [ref]$n) -and $n -ge 1 -and $n -le $matches.Count) {
+            Write-Host "Selected: $($matches[$n-1].Id) ($($matches[$n-1].DisplayName))"
+            Save-Config @{ timezoneId = $matches[$n-1].Id }
+            return $matches[$n-1]
+        }
+        Write-Host "Invalid choice."
+        $ans = $null
+    }
+}
+
+$script:tz = Select-Timezone
 
 $script:chrome = Get-ChromePath
 if (-not $script:chrome) {
@@ -58,8 +215,12 @@ if (-not $script:chrome) {
 }
 
 $script:debugPort = 9222
-$script:chromeProfile = Join-Path $PSScriptRoot "chrome-profile"
 $script:cdpId = 0
+
+$script:profile = Select-Profile
+$script:schedule = $script:profile.schedule
+$script:chromeProfile = Join-Path $PSScriptRoot $script:profile.chromeProfile
+Stop-AutomationChrome
 
 function Receive-CdpMessage($ws) {
     $ct = [System.Threading.CancellationToken]::None
@@ -174,7 +335,7 @@ function Join-Meeting($name, $link) {
 
         $js = @'
 (() => {
-  const prefixes = ['Join now', 'Ask to join', 'Join here', 'Switch here', 'انضمام الآن', 'اسأل عن الانضمام', 'التبديل هنا'];
+  const prefixes = ['Join now', 'Ask to join', 'Join here', 'Switch here', 'Ø§Ù†Ø¶Ù…Ø§Ù… Ø§Ù„Ø¢Ù†', 'Ø§Ø³Ø£Ù„ Ø¹Ù† Ø§Ù„Ø§Ù†Ø¶Ù…Ø§Ù…', 'Ø§Ù„ØªØ¨Ø¯ÙŠÙ„ Ù‡Ù†Ø§'];
   const candidates = Array.from(document.querySelectorAll('[role="button"], button'));
   for (const b of candidates) {
     const label = (b.getAttribute('aria-label') || '').trim();
@@ -307,8 +468,8 @@ function Join-FromClassroom($name, $subject) {
     }
 }
 
-$now = [System.TimeZoneInfo]::ConvertTime([DateTime]::UtcNow, $egyptTZ)
-Write-Log "Schedule is running - lectures in schedule: $($schedule.Count) - Egypt time: $($now.ToString('yyyy-MM-dd HH:mm'))"
+$now = [System.TimeZoneInfo]::ConvertTime([DateTime]::UtcNow, $script:tz)
+Write-Log "Schedule is running - lectures in schedule: $($script:schedule.Count) - Timezone $($script:tz.Id): $($now.ToString('yyyy-MM-dd HH:mm'))"
 Write-Log "Leave it running, it will open the links by itself."
 Write-Log "Account: PASTE_YOUR_ACCOUNT_EMAIL (already logged in if you used login-profile.bat)"
 
@@ -316,7 +477,7 @@ $openedToday = @{}
 $lastDay = ""
 
 while ($true) {
-    $now = [System.TimeZoneInfo]::ConvertTime([DateTime]::UtcNow, $egyptTZ)
+    $now = [System.TimeZoneInfo]::ConvertTime([DateTime]::UtcNow, $script:tz)
     $dayKey = $now.ToString("yyyy-MM-dd")
     $todayEnglish = $now.DayOfWeek.ToString()
     $timeStr = $now.ToString("HH:mm")
@@ -327,7 +488,7 @@ while ($true) {
         Write-Log "New day: $($now.ToString('dddd')) $dayKey"
     }
 
-    foreach ($lec in $schedule) {
+    foreach ($lec in $script:schedule) {
         if (-not (Test-DayMatches $lec.day $todayEnglish)) { continue }
 
         $openTime = ([DateTime]::Parse($lec.time)).AddMinutes([int]$lec.delay - [int]$lec.advance).ToString("HH:mm")
@@ -351,3 +512,6 @@ while ($true) {
 
     Start-Sleep -Seconds 15
 }
+
+
+

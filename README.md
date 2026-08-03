@@ -1,12 +1,13 @@
 # Lecture Opener
 
-Automatically opens your online lectures in Google Chrome at the right time (Egypt timezone), then clicks the **Join** button so you're inside the meeting before you even touch the keyboard.
+Automatically opens your online lectures in Google Chrome at the right time, then clicks the **Join** button so you're inside the meeting before you even touch the keyboard.
 
 No Python, no Node, no dependencies — just PowerShell and Chrome.
 
 ## How it works
 
-1. The script runs a loop and checks the time every 15 seconds (Egypt timezone).
+1. The script runs a loop and checks the time every 15 seconds.
+2. The first time you run it, it asks which country/timezone you're in and saves it to `config.json` (works for any country — no more hardcoded Egypt time).
 2. When it's time for a lecture, it launches Chrome (fullscreen) with a dedicated automation profile.
 3. It connects to Chrome via the DevTools Protocol and sends a **real mouse click** to the Join button (`Join now` / `Ask to join` / `Switch here`, English or Arabic).
 4. It keeps clicking until the Join button disappears from the screen (meaning you're in the meeting).
@@ -20,15 +21,23 @@ link **posted today** (it never opens a link from an old post).
 
 ### 1. Put your schedule in the script
 
-Edit the `$schedule` list at the top of `lecture-opener.ps1`:
+Edit the `$profiles` list at the top of `lecture-opener.ps1`. One profile = one university / Google account:
 
 ```powershell
-$schedule = @(
-    @{ name = "Math";    link = "https://meet.google.com/xxx-xxxx-xxx"; day = "Monday";    time = "10:00"; advance = 0; delay = 0; mode = "link";      classroom = "" }
-    @{ name = "Physics"; link = "";                                    day = "Wednesday"; time = "13:30"; advance = 0; delay = 0; mode = "classroom"; classroom = "Physics" }
+$profiles = @(
+    @{
+        name          = "My University"
+        account       = "me@uni.edu"
+        chromeProfile = "chrome-profile"
+        schedule      = @(
+            @{ name = "Math";    link = "https://meet.google.com/xxx-xxxx-xxx"; day = "Monday";    time = "10:00"; advance = 0; delay = 0; mode = "link";      classroom = "" }
+            @{ name = "Physics"; link = "";                                    day = "Wednesday"; time = "13:30"; advance = 0; delay = 0; mode = "classroom"; classroom = "Physics" }
+        )
+    }
 )
 ```
 
+Lecture fields (inside a profile's `schedule`):
 - `name` — subject name (just for the log)
 - `link` — the meeting link (leave empty when `mode = "classroom"`)
 - `day` — `Sunday` ... `Saturday` (abbreviations like `Mon` also work)
@@ -38,9 +47,20 @@ $schedule = @(
 - `mode` — `"link"` opens the saved link directly; `"classroom"` looks the link up in Google Classroom
 - `classroom` — the exact class name as shown in Google Classroom (only used in `"classroom"` mode)
 
+Profile fields:
+- `name` — profile name shown in the prompt / log
+- `account` — the Google account used for this university
+- `chromeProfile` — folder (next to the script) holding that account's Chrome login
+- `schedule` — that university's lecture list
+
+**Multiple universities:** add a second block (with its own `account`, its own
+`chromeProfile` folder like `chrome-profile2`, and its own schedule). When the script starts it
+will ask **which profile** to use. With only one profile it runs silently, no question.
+Each account is signed in separately via `login-profile.bat` (it lists all profiles).
+
 ### 2. Sign in to your Google account once
 
-The automation uses a separate Chrome profile so it never touches your normal Chrome. To sign in once:
+The automation uses separate Chrome profiles so it never touches your normal Chrome. To sign in once:
 
 1. Double-click `login-profile.bat`
 2. Sign in with your Google account

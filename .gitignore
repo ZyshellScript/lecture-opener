@@ -1,7 +1,7 @@
 # ============ NEVER upload these ============
 
-# Chrome profile with your logged-in Google account
-chrome-profile/
+# Chrome profiles with your logged-in Google accounts
+chrome-profile*
 
 # Logs may contain your real meeting links
 log.txt
@@ -10,3 +10,6 @@ diagnose-output.txt
 # Your real script (contains your real meeting links)
 lecture-opener.ps1
 lecture-opener-backup.ps1
+
+# Machine-specific timezone config
+config.json
