@@ -1,0 +1,12 @@
+# ============ NEVER upload these ============
+
+# Chrome profile with your logged-in Google account
+chrome-profile/
+
+# Logs may contain your real meeting links
+log.txt
+diagnose-output.txt
+
+# Your real script (contains your real meeting links)
+lecture-opener.ps1
+lecture-opener-backup.ps1
