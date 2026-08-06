@@ -11,5 +11,8 @@ diagnose-output.txt
 lecture-opener.ps1
 lecture-opener-backup.ps1
 
+# Your real schedule data (contains your real meeting links and accounts)
+data.json
+
 # Machine-specific timezone config
 config.json
