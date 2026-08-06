@@ -663,8 +663,8 @@ try {
     $ToastText = $script:mainWindow.FindName('ToastText')
 
     $script:data = Read-AppData
-    Refresh-Combos
     $script:currentProfileIdx = 0
+    Refresh-Combos
     Refresh-LecturesGrid
     Update-RunState
 
