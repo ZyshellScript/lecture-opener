@@ -51,6 +51,32 @@ function New-EmptyProfile {
     }
 }
 
+function Get-ChromeAccountEmail {
+    param([string]$profilePath)
+    $lsFile = Join-Path $profilePath 'Local State'
+    if (-not $profilePath -or -not (Test-Path -LiteralPath $lsFile)) { return '' }
+    try {
+        $ls = Get-Content -LiteralPath $lsFile -Raw | ConvertFrom-Json
+        $cache = $ls.profile.info_cache
+        if ($cache) {
+            foreach ($prop in $cache.PSObject.Properties) {
+                $entry = $prop.Value
+                if ($entry -and $entry.user_name) { return [string]$entry.user_name }
+            }
+        }
+    } catch {}
+    return ''
+}
+
+function Get-ProfileDisplayName {
+    param($profile)
+    if (-not $profile) { return '' }
+    if (-not [string]::IsNullOrWhiteSpace($profile.name)) { return $profile.name }
+    $email = Get-ChromeAccountEmail (Join-Path $script:Root $profile.chromeProfile)
+    if (-not [string]::IsNullOrWhiteSpace($email)) { return $email }
+    return ''
+}
+
 function Read-AppData {
     $data = [pscustomobject]@{ timezoneId = ''; lastProfile = ''; profiles = (New-Object System.Collections.ArrayList) }
     if (Test-Path -LiteralPath $script:DataPath) {
@@ -627,8 +653,8 @@ function Refresh-Combos {
     $ProfileCombo.Items.Clear()
     $ActiveProfileCombo.Items.Clear()
     foreach ($p in $script:data.profiles) {
-        [void]$ProfileCombo.Items.Add($p.name)
-        [void]$ActiveProfileCombo.Items.Add($p.name)
+        [void]$ProfileCombo.Items.Add((Get-ProfileDisplayName $p))
+        [void]$ActiveProfileCombo.Items.Add((Get-ProfileDisplayName $p))
     }
     if ($ProfileCombo.Items.Count -gt 0) { $ProfileCombo.SelectedIndex = 0 }
     if ($ActiveProfileCombo.Items.Count -gt 0) { $ActiveProfileCombo.SelectedIndex = 0 }
@@ -637,7 +663,7 @@ function Refresh-Combos {
 
 function Update-HeaderProfile {
     if ($script:currentProfileIdx -ge 0 -and $script:currentProfileIdx -lt $script:data.profiles.Count) {
-        $HeaderProfileText.Text = [string]$script:data.profiles[$script:currentProfileIdx].name
+        $HeaderProfileText.Text = Get-ProfileDisplayName $script:data.profiles[$script:currentProfileIdx]
     } else {
         $HeaderProfileText.Text = ''
     }
@@ -779,9 +805,22 @@ try {
     # Background Live Timer for Status and Logs
     $script:timer = New-Object System.Windows.Threading.DispatcherTimer
     $script:timer.Interval = [TimeSpan]::FromMilliseconds(1000)
+    $script:profileCheckCounter = 0
+    $script:lastProfileDisplayName = ''
     $script:timer.Add_Tick({
         Update-RunState
         Update-LogView
+        $script:profileCheckCounter++
+        if ($script:profileCheckCounter -ge 5) {
+            $script:profileCheckCounter = 0
+            if ($script:currentProfileIdx -ge 0 -and $script:currentProfileIdx -lt $script:data.profiles.Count) {
+                $display = Get-ProfileDisplayName $script:data.profiles[$script:currentProfileIdx]
+                if ($display -ne $script:lastProfileDisplayName) {
+                    $script:lastProfileDisplayName = $display
+                    Refresh-Combos
+                }
+            }
+        }
     })
     $script:timer.Start()
 
