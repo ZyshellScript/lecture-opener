@@ -612,7 +612,7 @@ function Start-Runner {
     Save-AppData
     if (Test-Path -LiteralPath $script:RunnerPath) {
         $runnerArg = '"' + $script:RunnerPath + '"'
-        $args = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $runnerArg, '-Auto')
+        $args = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $runnerArg, '-Auto', '-ProfileIndex', [string]$script:currentProfileIdx)
         $script:runnerProc = Start-Process -FilePath 'powershell.exe' -ArgumentList $args -WindowStyle Hidden -PassThru
     } else {
         Add-LogText "[GUI] Warning: Runner script 'lecture-opener.ps1' not found in path."

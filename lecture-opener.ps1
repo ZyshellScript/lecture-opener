@@ -1,4 +1,4 @@
-﻿param([switch]$Auto)
+﻿param([switch]$Auto, [int]$ProfileIndex = -1)
 # advance = open this many minutes BEFORE the time | delay = open this many minutes AFTER the time
 # mode = "link" (use the saved link) OR "classroom" (find the link in Google Classroom, class name in 'classroom')
 #
@@ -83,6 +83,15 @@ function Save-Config($props) {
 }
 
 function Select-Profile {
+    if ($ProfileIndex -ge 0 -and $ProfileIndex -lt $profiles.Count) {
+        $chosen = $profiles[$ProfileIndex]
+        Write-Log "Using profile: $($chosen.name) ($($chosen.account))"
+        if (@($chosen.schedule).Count -eq 0) {
+            Write-Log "This profile has no lectures scheduled. The automator will stay idle."
+        }
+        Save-Config @{ lastProfile = $chosen.name }
+        return $chosen
+    }
     $active = @($profiles | Where-Object { $_.schedule -and @($_.schedule).Count -gt 0 })
     if ($active.Count -eq 0) {
         Write-Log "ERROR: No profiles with a schedule were found. Add lectures from the app (start.bat)."
