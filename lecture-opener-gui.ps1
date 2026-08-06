@@ -77,6 +77,34 @@ function Get-ProfileDisplayName {
     return ''
 }
 
+function Sync-DetectedProfiles {
+    $used = @{}
+    foreach ($p in $script:data.profiles) {
+        if ($p.chromeProfile) { $used[$p.chromeProfile] = $true }
+    }
+    $folders = @(Get-ChildItem -LiteralPath $script:Root -Directory -Filter 'chrome-profile*' | Sort-Object Name)
+    $changed = $false
+    foreach ($f in $folders) {
+        if ($used.ContainsKey($f.Name)) { continue }
+        $email = Get-ChromeAccountEmail $f.FullName
+        if (-not $email) { continue }
+        $profile = [pscustomobject]@{
+            name          = $email
+            account       = $email
+            chromeProfile = $f.Name
+            schedule      = (New-Object System.Collections.ArrayList)
+        }
+        [void]$script:data.profiles.Add($profile)
+        $used[$f.Name] = $true
+        $changed = $true
+    }
+    if ($changed) {
+        Save-AppData
+        Refresh-Combos
+        Refresh-LecturesGrid
+    }
+}
+
 function Read-AppData {
     $data = [pscustomobject]@{ timezoneId = ''; lastProfile = ''; profiles = (New-Object System.Collections.ArrayList) }
     if (Test-Path -LiteralPath $script:DataPath) {
@@ -690,6 +718,7 @@ try {
 
     $script:data = Read-AppData
     $script:currentProfileIdx = 0
+    Sync-DetectedProfiles
     Refresh-Combos
     Refresh-LecturesGrid
     Update-RunState
@@ -813,6 +842,7 @@ try {
         $script:profileCheckCounter++
         if ($script:profileCheckCounter -ge 5) {
             $script:profileCheckCounter = 0
+            Sync-DetectedProfiles
             if ($script:currentProfileIdx -ge 0 -and $script:currentProfileIdx -lt $script:data.profiles.Count) {
                 $display = Get-ProfileDisplayName $script:data.profiles[$script:currentProfileIdx]
                 if ($display -ne $script:lastProfileDisplayName) {

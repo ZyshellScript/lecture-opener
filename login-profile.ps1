@@ -89,6 +89,13 @@ Start-Process -FilePath $chrome -ArgumentList @("--user-data-dir=$newFolder", "-
 [void](Read-Host "`nPress Enter after you signed in and closed Chrome")
 
 $email = Get-AccountEmail $newFolder
+if (-not $email) {
+    Write-Host "Waiting for the signed-in account to be detected..."
+    for ($i = 0; $i -lt 10 -and -not $email; $i++) {
+        Start-Sleep -Milliseconds 1000
+        $email = Get-AccountEmail $newFolder
+    }
+}
 if ($email) {
     $safe = $email -replace '[<>:"/\\|?*]', '_'
     $finalName = "chrome-profile-" + $safe
