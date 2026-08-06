@@ -75,7 +75,7 @@ function Read-AppData {
         }
     }
     if ($data.profiles.Count -eq 0) {
-        [void]$data.profiles.Add((New-EmptyProfile "Zewail University"))
+        [void]$data.profiles.Add((New-EmptyProfile "My University"))
     }
     return $data
 }
@@ -243,7 +243,7 @@ $mainXaml = @'
                     <Border HorizontalAlignment="Right" Background="#1E293B" CornerRadius="20" Padding="12,6" BorderBrush="#334155" BorderThickness="1">
                         <StackPanel Orientation="Horizontal">
                             <Ellipse Width="10" Height="10" Fill="#10B981" Margin="0,0,8,0"/>
-                            <TextBlock Name="HeaderProfileText" Text="Zewail University" Foreground="#E2E8F0" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center"/>
+                            <TextBlock Name="HeaderProfileText" Text="My University" Foreground="#E2E8F0" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center"/>
                         </StackPanel>
                     </Border>
                 </Grid>
