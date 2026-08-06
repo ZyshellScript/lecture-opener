@@ -24,10 +24,16 @@ if (Test-Path -LiteralPath $script:dataPath) {
         if ($dataObj.timezoneId) { $script:dataTimeZoneId = [string]$dataObj.timezoneId }
         if ($dataObj.lastProfile) { $script:dataLastProfile = [string]$dataObj.lastProfile }
         $profiles = @($dataObj.profiles | ForEach-Object {
+            $pName = [string]$_.name
+            $pAccount = [string]$_.account
+            $pChromeProfile = [string]$_.chromeProfile
+            $pEmail = Get-ChromeAccountEmail (Join-Path $PSScriptRoot $pChromeProfile)
+            if ([string]::IsNullOrWhiteSpace($pName) -and $pEmail) { $pName = $pEmail }
+            if ([string]::IsNullOrWhiteSpace($pAccount) -and $pEmail) { $pAccount = $pEmail }
             @{
-                name          = [string]$_.name
-                account       = [string]$_.account
-                chromeProfile = [string]$_.chromeProfile
+                name          = $pName
+                account       = $pAccount
+                chromeProfile = $pChromeProfile
                 schedule      = @($_.schedule | ForEach-Object {
                     @{ name = [string]$_.name; link = [string]$_.link; day = [string]$_.day; time = [string]$_.time; advance = [int]$_.advance; delay = [int]$_.delay; mode = [string]$_.mode; classroom = [string]$_.classroom }
                 })
@@ -40,6 +46,23 @@ if (Test-Path -LiteralPath $script:dataPath) {
 }
 if ($profiles.Count -eq 0 -and -not $Auto) {
     Write-Host "No schedule found in data.json. Open the app (start.bat) and add your lectures there."
+}
+
+function Get-ChromeAccountEmail {
+    param([string]$profilePath)
+    $lsFile = Join-Path $profilePath 'Local State'
+    if (-not $profilePath -or -not (Test-Path -LiteralPath $lsFile)) { return '' }
+    try {
+        $ls = Get-Content -LiteralPath $lsFile -Raw | ConvertFrom-Json
+        $cache = $ls.profile.info_cache
+        if ($cache) {
+            foreach ($prop in $cache.PSObject.Properties) {
+                $entry = $prop.Value
+                if ($entry -and $entry.user_name) { return [string]$entry.user_name }
+            }
+        }
+    } catch {}
+    return ''
 }
 
 function Get-ChromePath {
