@@ -17,6 +17,23 @@ $script:dataPath = Join-Path $PSScriptRoot "data.json"
 $script:dataTimeZoneId = $null
 $script:dataLastProfile = $null
 
+function Get-ChromeAccountEmail {
+    param([string]$profilePath)
+    $lsFile = Join-Path $profilePath 'Local State'
+    if (-not $profilePath -or -not (Test-Path -LiteralPath $lsFile)) { return '' }
+    try {
+        $ls = Get-Content -LiteralPath $lsFile -Raw | ConvertFrom-Json
+        $cache = $ls.profile.info_cache
+        if ($cache) {
+            foreach ($prop in $cache.PSObject.Properties) {
+                $entry = $prop.Value
+                if ($entry -and $entry.user_name) { return [string]$entry.user_name }
+            }
+        }
+    } catch {}
+    return ''
+}
+
 $profiles = @()
 if (Test-Path -LiteralPath $script:dataPath) {
     try {
@@ -27,7 +44,8 @@ if (Test-Path -LiteralPath $script:dataPath) {
             $pName = [string]$_.name
             $pAccount = [string]$_.account
             $pChromeProfile = [string]$_.chromeProfile
-            $pEmail = Get-ChromeAccountEmail (Join-Path $PSScriptRoot $pChromeProfile)
+            $pEmail = ''
+            if ($pChromeProfile) { $pEmail = Get-ChromeAccountEmail (Join-Path $PSScriptRoot $pChromeProfile) }
             if ([string]::IsNullOrWhiteSpace($pName) -and $pEmail) { $pName = $pEmail }
             if ([string]::IsNullOrWhiteSpace($pAccount) -and $pEmail) { $pAccount = $pEmail }
             @{
@@ -46,23 +64,6 @@ if (Test-Path -LiteralPath $script:dataPath) {
 }
 if ($profiles.Count -eq 0 -and -not $Auto) {
     Write-Host "No schedule found in data.json. Open the app (start.bat) and add your lectures there."
-}
-
-function Get-ChromeAccountEmail {
-    param([string]$profilePath)
-    $lsFile = Join-Path $profilePath 'Local State'
-    if (-not $profilePath -or -not (Test-Path -LiteralPath $lsFile)) { return '' }
-    try {
-        $ls = Get-Content -LiteralPath $lsFile -Raw | ConvertFrom-Json
-        $cache = $ls.profile.info_cache
-        if ($cache) {
-            foreach ($prop in $cache.PSObject.Properties) {
-                $entry = $prop.Value
-                if ($entry -and $entry.user_name) { return [string]$entry.user_name }
-            }
-        }
-    } catch {}
-    return ''
 }
 
 function Get-ChromePath {

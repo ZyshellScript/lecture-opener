@@ -611,6 +611,9 @@ function Start-Runner {
     if ($script:runnerProc -and -not $script:runnerProc.HasExited) { return }
     Save-AppData
     if (Test-Path -LiteralPath $script:RunnerPath) {
+        Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like '*lecture-opener.ps1*' } | ForEach-Object {
+            Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+        }
         $runnerArg = '"' + $script:RunnerPath + '"'
         $args = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $runnerArg, '-Auto', '-ProfileIndex', [string]$script:currentProfileIdx)
         $script:runnerProc = Start-Process -FilePath 'powershell.exe' -ArgumentList $args -WindowStyle Hidden -PassThru
