@@ -7,8 +7,7 @@ chrome-profile*
 log.txt
 diagnose-output.txt
 
-# Your real script (contains your real meeting links)
-lecture-opener.ps1
+# Backup of the engine (kept local only)
 lecture-opener-backup.ps1
 
 # Your real schedule data (contains your real meeting links and accounts)
