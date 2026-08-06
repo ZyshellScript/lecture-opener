@@ -75,7 +75,7 @@ function Read-AppData {
         }
     }
     if ($data.profiles.Count -eq 0) {
-        [void]$data.profiles.Add((New-EmptyProfile "My University"))
+        [void]$data.profiles.Add((New-EmptyProfile ""))
     }
     return $data
 }
@@ -243,7 +243,7 @@ $mainXaml = @'
                     <Border HorizontalAlignment="Right" Background="#1E293B" CornerRadius="20" Padding="12,6" BorderBrush="#334155" BorderThickness="1">
                         <StackPanel Orientation="Horizontal">
                             <Ellipse Width="10" Height="10" Fill="#10B981" Margin="0,0,8,0"/>
-                            <TextBlock Name="HeaderProfileText" Text="My University" Foreground="#E2E8F0" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center"/>
+                            <TextBlock Name="HeaderProfileText" Text="" Foreground="#E2E8F0" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center"/>
                         </StackPanel>
                     </Border>
                 </Grid>
@@ -632,6 +632,15 @@ function Refresh-Combos {
     }
     if ($ProfileCombo.Items.Count -gt 0) { $ProfileCombo.SelectedIndex = 0 }
     if ($ActiveProfileCombo.Items.Count -gt 0) { $ActiveProfileCombo.SelectedIndex = 0 }
+    Update-HeaderProfile
+}
+
+function Update-HeaderProfile {
+    if ($script:currentProfileIdx -ge 0 -and $script:currentProfileIdx -lt $script:data.profiles.Count) {
+        $HeaderProfileText.Text = [string]$script:data.profiles[$script:currentProfileIdx].name
+    } else {
+        $HeaderProfileText.Text = ''
+    }
 }
 
 try {
@@ -645,6 +654,7 @@ try {
     $LecturesGrid = $script:mainWindow.FindName('LecturesGrid')
     $ProfileCombo = $script:mainWindow.FindName('ProfileCombo')
     $ActiveProfileCombo = $script:mainWindow.FindName('ActiveProfileCombo')
+    $HeaderProfileText = $script:mainWindow.FindName('HeaderProfileText')
     $TimezoneCombo = $script:mainWindow.FindName('TimezoneCombo')
     $TimezoneHint = $script:mainWindow.FindName('TimezoneHint')
     $ChromePathBox = $script:mainWindow.FindName('ChromePathBox')
@@ -742,6 +752,28 @@ try {
             Refresh-LecturesGrid
             Show-Toast "Lecture deleted successfully!"
         }
+    })
+
+    function Sync-ProfileSelection {
+        $idx = $ProfileCombo.SelectedIndex
+        if ($idx -lt 0) { $idx = 0 }
+        if ($idx -lt $script:data.profiles.Count) {
+            $script:currentProfileIdx = $idx
+            if ($ActiveProfileCombo.SelectedIndex -ne $idx) { $ActiveProfileCombo.SelectedIndex = $idx }
+        }
+        Refresh-LecturesGrid
+        Update-HeaderProfile
+    }
+    $ProfileCombo.Add_SelectionChanged({ Sync-ProfileSelection })
+    $ActiveProfileCombo.Add_SelectionChanged({
+        $idx = $ActiveProfileCombo.SelectedIndex
+        if ($idx -lt 0) { $idx = 0 }
+        if ($idx -lt $script:data.profiles.Count) {
+            $script:currentProfileIdx = $idx
+            if ($ProfileCombo.SelectedIndex -ne $idx) { $ProfileCombo.SelectedIndex = $idx }
+        }
+        Refresh-LecturesGrid
+        Update-HeaderProfile
     })
 
     # Background Live Timer for Status and Logs
